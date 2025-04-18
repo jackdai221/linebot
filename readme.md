@@ -42,5 +42,6 @@ git push -u origin main
 git add .
 git commit -m "first commit"
 git push -u origin main
+
 上述步驟可省略，直接點選樹枝圖樣的版本管理
-commit說明修改內容
+commit說明修改內容，sync changes即可
