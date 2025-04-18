@@ -30,6 +30,26 @@ from linebot.v3.webhooks import (
 )
 
 import os
+import requests
+import base64
+
+from dotenv import load_dotenv
+#載入環境變數
+
+from openai import OpenAI
+#從openai模組導入OpenAI類別(大寫)
+
+#是否在render.com上運行
+running_on_render= os.getenv("RENDER")
+print("現在是在render上運行?",running_on_render)
+#如果不在render上運行，才需要load_dotenv載入環境變數
+if not running_on_render:
+    load_dotenv
+
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
+
 
 app = Flask(__name__)
 
@@ -77,7 +97,7 @@ def handle_message(event):
         user_msg = event.message.text
         print("使用者傳入的文字訊息是:", user_msg)
         # 使用TextMessage產生一段用於回應使用者的Line文字訊息
-        bot_msg = TextMessage(text=f"您剛才說的是: {user_msg}")
+        bot_msg = TextMessage(text=f"您好，您剛才說的是: {user_msg}")
         if user_msg in faq:
             #dictionary[key]-->value
             bot_msg=faq [user_msg]
@@ -85,6 +105,27 @@ def handle_message(event):
         elif user_msg.lower() in ["menu","選單","主選單"]:
             bot_msg=menu
             #如果使用者回應轉成小寫後有落在選單內，則以選單回應
+        else:
+            #如非上述者，就使用openai來生成回應
+            completion = client.chat.completions.create(
+                model="gpt-4.1",
+                messages=[
+                    #加上客製化特徵
+                    {"role": "system",
+                     "content":"""
+你是戴律師的法律助理，是一個有禮貌且幽默風趣的助理。
+請勿使用髒話或污辱性字眼。
+使用繁體中文回應。
+使用純文字而不是markdown格式。
+"""
+                    },
+                    {
+                     "role": "user",
+                     "content": user_msg
+                    }
+                ]
+            )
+            bot_msg= TextMessage(text=completion.choices[0].message.content)
 
         line_bot_api.reply_message_with_http_info(
             ReplyMessageRequest(
@@ -147,6 +188,74 @@ def handle_location_message(event):
                 ]
             )
         )
+
+# 此處理器負責處理接收到Line Server傳來的圖片時的流程
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image_message(event):
+    with ApiClient(configuration) as api_client:
+        print("event.message裡面有什麼",event.message.id)
+        messageid = event.message.id
+        
+        # 使用requests獲取圖片
+        headers = {
+            'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'
+        }
+        url = f'https://api-data.line.me/v2/bot/message/{messageid}/content'
+        response = requests.get(url, headers=headers)
+        
+        # 將圖片轉換為base64
+        image_base64 = base64.b64encode(response.content).decode('utf-8')
+        #print("圖片的base64格式：", image_base64)
+        
+        # 使用OpenAI進行影像分析
+        try:
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "請簡單描述這張圖片中的內容"
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{image_base64}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=300
+            )
+            
+            # 獲取AI的描述
+            ai_description = completion.choices[0].message.content
+            
+            # 回覆訊息
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[
+                        TextMessage(text=f"AI看到的內容是：\n{ai_description}")
+                    ]
+                )
+            )
+        except Exception as e:
+            print("OpenAI API錯誤：", str(e))
+            # 如果發生錯誤，回覆錯誤訊息
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[
+                        TextMessage(text="抱歉，圖片分析過程中發生錯誤，請稍後再試。")
+                    ]
+                )
+            )
 
 # 如果應用程式被執行執行
 if __name__ == "__main__":

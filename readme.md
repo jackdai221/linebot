@@ -30,10 +30,17 @@ git config --global user.name 你的使用者名稱
 git config --global user.email 你的Email
 ```
 
-
+#第一次部署
 git init
 git add .
 git commit -m "first commit"
 git branch -M main
 git remote add origin https://github.com/jackdai221/linebot.git
 git push -u origin main
+
+#第二次部署
+git add .
+git commit -m "first commit"
+git push -u origin main
+上述步驟可省略，直接點選樹枝圖樣的版本管理
+commit說明修改內容
